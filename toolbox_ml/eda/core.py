@@ -9,13 +9,13 @@ def describe_df(df: pd.DataFrame) -> pd.DataFrame:
     el nombre de cada columna. Las columnas del resultado deben ser"""
 
     if not isinstance(df, pd.DataFrame):
-        print(f"El argumento es de tipo {type(df)} cuando debe ser un DataFrame")
+        print(f"El argumento es de tipo {type(df)} cuando debería ser un DataFrame")
         return None
     
     tipo = df.dtypes
-    porcentaje_nulos = (df.isnull().sum() / len(df)) * 100
+    porcentaje_nulos = round((df.isnull().sum() / len(df)) * 100, 2)
     valores_unicos = df.nunique()
-    porcentaje_cardinalidad = (valores_unicos / len(df)) * 100
+    porcentaje_cardinalidad = round((valores_unicos / len(df)) * 100, 2)
 
     columnas = pd.DataFrame({
         "tipo" : tipo,
