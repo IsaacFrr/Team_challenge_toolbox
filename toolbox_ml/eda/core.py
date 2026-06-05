@@ -40,4 +40,9 @@ def tipifica_variables(df: pd.DataFrame, umbral_categoria: int = 15, umbral_cont
         elif valor >= umbral_categoria and porcentaje_cardinalidad[clave] <= umbral_continua:
             lista.append("Numérica Discreta")
 
+    columnas = pd.DataFrame({
+        "nombre_variable": cardinalidad.index,
+        "tipo_sugerido": lista
+    })
 
+    return columnas
