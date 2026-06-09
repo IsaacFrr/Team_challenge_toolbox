@@ -38,7 +38,7 @@ pytest tests/
 
 ## Equipo
 
-Desarrollado por el equipo del Bootcamp DS Online Madrid (Sept 2025 - Abr 2026) de The Bridge.
+Desarrollado por el equipo del TC 5 del Bootcamp DS Online Madrid (Sept 2025 - Abr 2026) de The Bridge.
 
 ## Licencia
 
