@@ -1,5 +1,8 @@
-import pandas as pd
+import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
+import scipy
+import seaborn as sns
 
 # --- FUNCIONES DE ANÁLISIS ---
 
@@ -47,7 +50,7 @@ def tipifica_variables(df: pd.DataFrame, umbral_categoria: int = 15, umbral_cont
         "tipo_sugerido": lista
         })
     
-    return resultado
+    return columnas
 
 # DESCRIBIR EL DATAFRAME
 def describe_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -109,3 +112,126 @@ def verificar_dataframe(df: pd.DataFrame, exigir_numericas: bool = False) -> Non
     assert len(columnas_constantes) == 0, f"Hay columnas constantes sin información: {columnas_constantes}"
 
     print("El DataFrame está listo para modelar")
+
+    return
+
+# --- FUNCIONES DE REGRESIÓN CATEGÓRICA---
+
+def get_features_cat_regression(
+    df: pd.DataFrame,
+    target_col: str,
+    pvalue: float = 0.05
+) -> list:
+    if not isinstance(df, pd.DataFrame):
+        print("Provided dataframe is not a pd.Dataframe.")
+        return
+    if target_col not in df.columns:
+        print("Target column is not in dataframe.")
+        return
+    if not (isinstance(pvalue, float) and (0 < pvalue and pvalue < 1)):
+        print("P-value must be a floating point number between 0 and 1.")
+        return
+
+    features = []
+    df_tipos = tipifica_variables(df, umbral_categoria = 15, umbral_continua=85)
+
+    if df_tipos.loc[df_tipos["nombre_variable"]==target_col, "tipo_sugerido"].isin(["Binaria", "Categórica"]).iloc[0]:
+        print("Target variable must be numerical.")
+        return
+
+    variables = df_tipos.loc[df_tipos.tipo_sugerido.isin(["Binaria", "Categórica"])]
+    for indep_var, tipo in zip(variables["nombre_variable"].tolist(), variables["tipo_sugerido"].tolist()):
+        if tipo == "Binaria":
+            # Estadístico U de Mann-Whitney
+            grupos = [df.loc[df[indep_var]==clase][target_col] for clase in df[indep_var].unique()]
+            pval_stat = scipy.stats.mannwhitneyu(grupos[0], grupos[1])[1]
+
+        elif tipo == "Categórica":
+            # Estadístico F de ANOVA
+            grupos = [df.loc[df[indep_var] == clase, target_col] for clase in df[indep_var].dropna(inplace=False).unique()]
+            if 1 in [len(grupo) for grupo in grupos]:
+                pval_stat = scipy.stats.kruskal(*grupos)[1] # para poblaciones con tamaño muestral pequeño
+            else:
+                pval_stat = scipy.stats.f_oneway(*grupos)[1]
+
+        if pval_stat in [np.nan, np.inf]: # Con algunos sets de datos puede devolver np.nan o np.inf
+            print(f"Data size for target variable groups by {indep_var} is not sufficient.")
+        elif pval_stat <= pvalue:
+            features.append(indep_var)
+
+    return features
+
+
+def plot_features_cat_regression(
+    df: pd.DataFrame,
+    target_col: str = "",
+    columns: list = [],
+    pvalue: float = 0.05,
+    with_individual_plot: bool = False
+) -> list:
+    # Comprobaciones
+    if not isinstance(df, pd.DataFrame):
+        print("Provided dataframe is not a pd.Dataframe.")
+        return
+    if target_col not in df.columns:
+        print("Target column is not in dataframe.")
+        return
+    if not (isinstance(pvalue, float) and (0 < pvalue and pvalue < 1)):
+        print("P-value must be a floating point number between 0 and 1.")
+        return
+
+    df_tipos = tipifica_variables(df)
+    if df_tipos.loc[df_tipos["nombre_variable"]==target_col, "tipo_sugerido"].isin(["Binaria", "Categórica"]).iloc[0]:
+        print("target variable must be numerical.")
+        return
+
+    # Lista de features según las columnas dadas
+    if len(columns) == 0:
+        features = df_tipos.loc[df_tipos.tipo_sugerido.isin(["Binaria", "Categórica"]), "nombre_variable"].tolist()
+    else:
+        cats_sign = get_features_cat_regression(df, target_col, pvalue)
+        if (type(cats_sign) == None):
+            return
+        elif len(cats_sign) == 0:
+            print("Selected variables are not significantly correlated to target.")
+            return
+        features = list(set(cats_sign).intersection(set(columns)))
+    
+    # Plot de target según las features
+    if with_individual_plot:
+        for var in features:
+            categorias = df[var].unique().tolist()
+            plt.figure(figsize=(8, 6))
+
+            sns.histplot(data=df, x=target_col, hue=var, hue_order=categorias, bins=20, kde=True, stat="count", alpha=0.4,)
+
+            plt.title(f"{target_col} según {var}: "f"{', '.join(map(str, categorias))}")    # map convierte bools y numeros en str
+            plt.xlabel(target_col)
+            plt.show()
+    else:
+        n = len(features)
+        ncols = min(3, n)
+        nrows = int(np.ceil(n / ncols))
+
+        fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=(7*min(2, ncols), 5*nrows))
+        axes = np.array(axes).reshape(-1)
+
+        for i, var in enumerate(features):
+            ax = axes[i]
+            tabla = pd.crosstab(df[var], df[target_col]) # Tabla de contingencia
+            ylabel = "Frecuencia absoluta"
+
+            sns.histplot(data=df, x=target_col, hue=var, hue_order=df[var].unique().tolist(), bins=20, kde=True, stat="count", alpha=0.4, ax=ax)
+
+            ax.set_title(f"{target_col} según {var}")
+            ax.set_xlabel(var)
+            ax.set_ylabel(ylabel)
+            ax.tick_params(axis="x", rotation=45)
+
+        for j in range(i + 1, len(axes)):
+            axes[j].axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+    return
