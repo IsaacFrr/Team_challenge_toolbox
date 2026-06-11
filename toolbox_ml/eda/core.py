@@ -117,11 +117,21 @@ def verificar_dataframe(df: pd.DataFrame, exigir_numericas: bool = False) -> Non
 
 # --- FUNCIONES DE REGRESIÓN CATEGÓRICA---
 
-def get_features_cat_regression(
-    df: pd.DataFrame,
-    target_col: str,
-    pvalue: float = 0.05
-) -> list:
+def get_features_cat_regression( df: pd.DataFrame, target_col: str, pvalue: float = 0.05) -> list:
+    """
+    Returns all categorical variables significantly correlated to target in dataset.
+
+    By default, level of significance is set to 0.05.
+
+        Parameters:
+            df (pd.DataFrame): dataframe where each column is a variable and each row is an observation
+            target_col (str):  target variable to compare.
+            pvalue (float): level of significance to use for test statistic.
+
+        Returns:
+            features (list): list of cualitative features significantly correlated to target.
+    """
+
     if not isinstance(df, pd.DataFrame):
         print("Provided dataframe is not a pd.Dataframe.")
         return
@@ -129,14 +139,14 @@ def get_features_cat_regression(
         print("Target column is not in dataframe.")
         return
     if not (isinstance(pvalue, float) and (0 < pvalue and pvalue < 1)):
-        print("P-value must be a floating point number between 0 and 1.")
+        print("Set p-value must be a floating point number between 0 and 1.")
         return
 
     features = []
-    df_tipos = tipifica_variables(df, umbral_categoria = 15, umbral_continua=85)
+    df_tipos = tipifica_variables(df)
 
     if df_tipos.loc[df_tipos["nombre_variable"]==target_col, "tipo_sugerido"].isin(["Binaria", "Categórica"]).iloc[0]:
-        print("Target variable must be numerical.")
+        print("Target variable must contain numerical data.")
         return
 
     variables = df_tipos.loc[df_tipos.tipo_sugerido.isin(["Binaria", "Categórica"])]
@@ -162,13 +172,23 @@ def get_features_cat_regression(
     return features
 
 
-def plot_features_cat_regression(
-    df: pd.DataFrame,
-    target_col: str = "",
-    columns: list = [],
-    pvalue: float = 0.05,
-    with_individual_plot: bool = False
-) -> list:
+def plot_features_cat_regression(df: pd.DataFrame, target_col: str = "", columns: list = [], pvalue: float = 0.05, with_individual_plot: bool = False) -> list:
+    """
+    Plot of target variable classified by given categorical column variables.
+
+    If no columns are given, uses all cualitative variables in dataset.
+    Default level of significance is set to 0.05.
+
+        Parameters:
+            df (pd.DataFrame): dataframe where each column is a variable and each row is an observation
+            target_col (str):  target variable to compare.
+            columns (list of strings): variables within df to use.
+            with_individual_plot (bool): if True, draws one plot per categorical variable.
+            pvalue (float): level of significance to use for test statistic.
+
+        Returns:
+            features (list): list of cualitative features used in plot.
+    """
     # Comprobaciones
     if not isinstance(df, pd.DataFrame):
         print("Provided dataframe is not a pd.Dataframe.")
@@ -182,7 +202,7 @@ def plot_features_cat_regression(
 
     df_tipos = tipifica_variables(df)
     if df_tipos.loc[df_tipos["nombre_variable"]==target_col, "tipo_sugerido"].isin(["Binaria", "Categórica"]).iloc[0]:
-        print("target variable must be numerical.")
+        print("Target variable must contain numerical data.")
         return
 
     # Lista de features según las columnas dadas
@@ -190,12 +210,16 @@ def plot_features_cat_regression(
         features = df_tipos.loc[df_tipos.tipo_sugerido.isin(["Binaria", "Categórica"]), "nombre_variable"].tolist()
     else:
         cats_sign = get_features_cat_regression(df, target_col, pvalue)
-        if (type(cats_sign) == None):
+        if cats_sign == None:
             return
         elif len(cats_sign) == 0:
-            print("Selected variables are not significantly correlated to target.")
+            print("No categorical variables are significantly correlated to target for the given thresholds.")
             return
-        features = list(set(cats_sign).intersection(set(columns)))
+        features = list(set(cats_sign)&set(columns))
+    
+    if len(features)==0:    # Si la intersección es vacía
+        print("None of the given variables are significantily related to target.")
+        return
     
     # Plot de target según las features
     if with_individual_plot:
@@ -208,6 +232,7 @@ def plot_features_cat_regression(
             plt.title(f"{target_col} según {var}: "f"{', '.join(map(str, categorias))}")    # map convierte bools y numeros en str
             plt.xlabel(target_col)
             plt.show()
+
     else:
         n = len(features)
         ncols = min(3, n)
@@ -234,4 +259,118 @@ def plot_features_cat_regression(
         plt.tight_layout()
         plt.show()
 
-    return
+    return features
+
+# --- FUNCIONES DE REGRESIÓN NUMÉRICA---
+def get_features_num_regression(df: pd.DataFrame, target_col: str, umbral_corr: float, pvalue: float = 1.) -> list:
+    """
+    Returns all numerical variables significantly correlated to target in dataset.
+
+    By default, level of significance is set to 1.
+
+        Parameters:
+            df (pd.DataFrame): dataframe where each column is a variable and each row is an observation
+            target_col (str):  target variable to compare.
+            umbral_corr (float): correlation threshold to consider a variable statistically significant.
+            pvalue (float): level of significance to use for test statistic.
+
+        Returns:
+            features (list): list of cuantitative features significantly correlated to target.
+    """
+    # Comprobaciones
+    if not isinstance(df, pd.DataFrame):
+        print("Provided dataframe is not a pd.Dataframe.")
+        return
+    if target_col not in df.columns:
+        print("Target column is not in dataframe.")
+        return
+    if not (isinstance(pvalue, float) and (0 < pvalue and pvalue <= 1)):    # sin permitir none
+        print("Set p-value must be a float between 0 and 1.")
+        return
+    if not (isinstance(umbral_corr, float) and (0 <= umbral_corr and umbral_corr < 1)):
+        print("Set correlation threshold must be a float between 0 and 1.")
+        return
+
+    features = []
+    df_tipos = tipifica_variables(df)
+    
+    if df_tipos.loc[df_tipos["nombre_variable"]==target_col, "tipo_sugerido"].isin(["Binaria", "Categórica"]).iloc[0]:
+        print("Target variable must contain numerical data.")
+        return
+
+    df_tipos.drop(df_tipos.loc[df_tipos["nombre_variable"]==target_col].index, inplace=True)  # Quitar el target
+
+    for indep_var in df_tipos.loc[df_tipos.tipo_sugerido.isin(["Numérica Discreta", "Numérica Continua"]), "nombre_variable"]:
+        stat, pval_stat = scipy.stats.pearsonr(df[indep_var], df[target_col])
+
+        if pval_stat in [np.nan, np.inf]:
+            print(f"Data size for target variable groups by {indep_var} is not sufficient.")
+        elif (abs(stat) > umbral_corr) and (pval_stat <= pvalue):
+            features.append(indep_var)
+    
+    return features
+
+def plot_features_num_regression(df: pd.DataFrame, target_col: str = "", columns: list = [], umbral_corr: float = 0., pvalue: float = 1.) -> list:
+    """
+    Plot of target variable classified by given numerical column variables.
+
+    If no columns are given, uses all cuantitative variables in dataset.
+    Default level of significance is set to 1 and correlation threshold is 0 (all variables are considered).
+
+        Parameters:
+            df (pd.DataFrame): dataframe where each column is a variable and each row is an observation
+            target_col (str):  target variable to compare.
+            columns (list of strings): variables within df to use.
+            umbral_corr (float): correlation threshold to consider a variable statistically significant.
+            pvalue (float): level of significance to use for test statistic.
+
+        Returns:
+            features (list): list of cuantitative features used in plot.
+    """
+    # Comprobaciones
+    if not isinstance(df, pd.DataFrame):
+        print("Provided dataframe is not a pd.Dataframe.")
+        return
+    if target_col not in df.columns:
+        print("Target column is not in dataframe.")
+        return
+    if not (isinstance(pvalue, float) and (0 < pvalue and pvalue <= 1)):    # sin permitir none
+        print("Set p-value must be a float between 0 and 1.")
+        return
+    if not (isinstance(umbral_corr, float) and (0 <= umbral_corr and umbral_corr < 1)):
+        print("Set correlation threshold must be a float between 0 and 1.")
+        return
+
+    features = []
+    df_tipos = tipifica_variables(df)
+    
+    if df_tipos.loc[df_tipos["nombre_variable"]==target_col, "tipo_sugerido"].isin(["Binaria", "Categórica"]).iloc[0]:
+        print("Target variable must contain numerical data.")
+
+    df_tipos.drop(df_tipos.loc[df_tipos["nombre_variable"]==target_col].index, inplace=True)  # Quitar la target
+    
+    # Lista de features según las columnas dadas
+    if len(columns) == 0:
+        features = df_tipos.loc[df_tipos.tipo_sugerido.isin(["Numérica Discreta", "Numérica Continua"]), "nombre_variable"].tolist()
+    else:
+        vars_sign = get_features_num_regression(df, target_col, umbral_corr, pvalue)
+        if vars_sign == None:
+            return
+        elif len(vars_sign) == 0:
+            print("No numerical variables are significantly correlated to target for the given thresholds.")
+            return
+        features = list(set(vars_sign)&set(columns))
+    
+    if len(features)==0:
+        print("None of the given variables are significantily related to target.")
+        return
+
+    # Plot de target según las features
+    grupos = [features[i:i + 5] for i in range(0, len(features), 5)]
+
+    for var_set in grupos:
+        var_set.insert(0, target_col)
+        sns.pairplot(df, vars=var_set)
+        plt.show()
+
+    return features
